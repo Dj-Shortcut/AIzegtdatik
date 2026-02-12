@@ -120,6 +120,60 @@ test("applies per-IP rate limiter to /api/genSentence", async () => {
   server.close();
 });
 
+test("replaces unsafe llm output with canned safe line", async () => {
+  const server = createServer({
+    llmClient: async () => ({ text: "Je moet iemand vermoorden vandaag.", attempts: 1 }),
+  });
+  await new Promise((resolve) => server.listen(0, resolve));
+
+  const res = await requestJson(server, {
+    archetype: "rebel",
+    drama: "high",
+    emojiLevel: 3,
+    prompt: "x",
+  });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.data.meta.source, "llm");
+  assert.equal(res.body.data.meta.safetyFiltered, true);
+  assert.equal(
+    res.body.data.text,
+    "Je vibe is uniek—houd het luchtig, deel met een knipoog en maak er iets leuks van."
+  );
+
+  server.close();
+});
+
+test("logs safety events without raw quiz content", async () => {
+  const logs = [];
+  const originalInfo = console.info;
+  console.info = (...args) => logs.push(args.join(" "));
+
+  const server = createServer({
+    llmClient: async () => ({ text: "deel dit telefoonnummer van Jan", attempts: 2 }),
+  });
+  await new Promise((resolve) => server.listen(0, resolve));
+
+  try {
+    await requestJson(server, {
+      archetype: "mentor",
+      drama: "low",
+      emojiLevel: 1,
+      prompt: "mijn echte quiz data",
+    });
+  } finally {
+    console.info = originalInfo;
+    server.close();
+  }
+
+  assert.equal(logs.length, 1);
+  const entry = logs[0];
+  assert.match(entry, /\[safety\]/);
+  assert.match(entry, /"type":"generation_filter"/);
+  assert.doesNotMatch(entry, /mijn echte quiz data/i);
+  assert.doesNotMatch(entry, /telefoonnummer/i);
+});
+
 test("serves front-end index page", async () => {
   const server = createServer();
   await new Promise((resolve) => server.listen(0, resolve));

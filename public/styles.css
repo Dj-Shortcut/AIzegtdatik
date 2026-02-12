@@ -55,6 +55,12 @@ button {
   margin: 12px 0;
 }
 
+.microcopy {
+  margin: 6px 0;
+  color: #cbd5e1;
+  font-size: 0.95rem;
+}
+
 .hidden {
   display: none;
 }
