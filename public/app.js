@@ -51,8 +51,13 @@ const statusEl = document.getElementById("status");
 const shareBtn = document.getElementById("shareBtn");
 const copyBtn = document.getElementById("copyBtn");
 const canvas = document.getElementById("badgeCanvas");
+const BADGE_SIZE = 1080;
+const SAFE_MARGIN = 88;
 
 let latestShareText = "";
+let latestProfile = null;
+
+copyBtn.textContent = "Copy status text";
 
 function initFbInstant() {
   if (!window.FBInstant) return;
@@ -117,23 +122,38 @@ function drawBadge({ archetype, drama, sentence, engagementScore }) {
     explorer: "#7c3aed",
   };
 
+  canvas.width = BADGE_SIZE;
+  canvas.height = BADGE_SIZE;
+
   const ctx = canvas.getContext("2d");
+  const contentWidth = BADGE_SIZE - SAFE_MARGIN * 2;
+  const dramaLabel = drama.toUpperCase();
+  const shortSentence = sentence.length > 90 ? `${sentence.slice(0, 87).trimEnd()}…` : sentence;
+
   ctx.fillStyle = palette[archetype] ?? "#1f2937";
-  ctx.fillRect(0, 0, 1080, 1080);
+  ctx.fillRect(0, 0, BADGE_SIZE, BADGE_SIZE);
+
+  ctx.fillStyle = "rgba(255,255,255,0.14)";
+  ctx.fillRect(SAFE_MARGIN - 24, SAFE_MARGIN - 24, contentWidth + 48, BADGE_SIZE - SAFE_MARGIN * 2 + 48);
 
   ctx.fillStyle = "white";
-  ctx.font = "bold 80px Inter, Arial";
-  ctx.fillText("AI zegt dat ik…", 80, 140);
+  ctx.textAlign = "left";
+  ctx.font = "700 84px Inter, Arial, sans-serif";
+  ctx.fillText("AI zegt dat ik…", SAFE_MARGIN, 170);
 
-  ctx.font = "bold 92px Inter, Arial";
-  ctx.fillText(archetype.toUpperCase(), 80, 300);
+  ctx.font = "800 132px Inter, Arial, sans-serif";
+  wrapText(ctx, archetype.toUpperCase(), SAFE_MARGIN, 325, contentWidth, 136);
 
-  ctx.font = "48px Inter, Arial";
-  ctx.fillText(`Drama: ${drama.toUpperCase()}`, 80, 400);
-  ctx.fillText(`Engagement: ${engagementScore}`, 80, 470);
+  ctx.font = "700 56px Inter, Arial, sans-serif";
+  ctx.fillText(`Drama: ${dramaLabel}`, SAFE_MARGIN, 520);
+  ctx.fillText(`Engagement: ${engagementScore}/100`, SAFE_MARGIN, 595);
 
-  ctx.font = "42px Inter, Arial";
-  wrapText(ctx, sentence, 80, 620, 900, 58);
+  ctx.font = "500 50px Inter, Arial, sans-serif";
+  wrapText(ctx, shortSentence, SAFE_MARGIN, 715, contentWidth, 64);
+
+  ctx.font = "600 40px Inter, Arial, sans-serif";
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.fillText("Maak je eigen badge op aizegtdatik.nl", SAFE_MARGIN, BADGE_SIZE - SAFE_MARGIN - 18);
 }
 
 function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
@@ -174,16 +194,43 @@ async function generateSentence(profile) {
   return payload.data.text;
 }
 
+function buildStatusTemplate({ archetype, drama, engagementScore }, sentence) {
+  return `AI zegt dat ik ${archetype} ben ✨\nDrama: ${drama.toUpperCase()} | Engagement: ${engagementScore}/100\n${sentence}\nDoe de quiz: aizegtdatik.nl`;
+}
+
+function buildSharePayload(base64Image, text) {
+  const supportedApis = typeof window.FBInstant?.getSupportedAPIs === "function"
+    ? window.FBInstant.getSupportedAPIs()
+    : [];
+  const payload = {
+    image: base64Image,
+    data: { source: "ai-zegt-dat-ik" },
+  };
+
+  if (supportedApis.includes("shareAsync")) {
+    payload.intent = "SHARE";
+    payload.text = text;
+  }
+
+  return payload;
+}
+
+function setSharingState(isSharing) {
+  shareBtn.disabled = isSharing;
+  shareBtn.textContent = isSharing ? "Bezig met delen…" : "Delen via Instant Games";
+}
+
 submitBtn.addEventListener("click", async () => {
   statusEl.textContent = "Resultaat wordt berekend…";
   const profile = calculateProfile();
 
   try {
     const sentence = await generateSentence(profile);
+    latestProfile = profile;
     resultSection.classList.remove("hidden");
     archetypeText.textContent = `Archetype: ${profile.archetype} • Drama: ${profile.drama}`;
     sentenceText.textContent = sentence;
-    latestShareText = `AI zegt dat ik ${profile.archetype} ben (${profile.drama}). ${sentence}`;
+    latestShareText = buildStatusTemplate(profile, sentence);
     drawBadge({ ...profile, sentence });
     statusEl.textContent = "Klaar om te delen.";
   } catch (error) {
@@ -194,27 +241,29 @@ submitBtn.addEventListener("click", async () => {
 copyBtn.addEventListener("click", async () => {
   if (!latestShareText) return;
   await navigator.clipboard.writeText(latestShareText);
-  statusEl.textContent = "Statustekst gekopieerd.";
+  statusEl.textContent = "Status gekopieerd. Plak deze in je Facebook-post.";
 });
 
 shareBtn.addEventListener("click", async () => {
-  if (!latestShareText) return;
+  if (!latestShareText || !latestProfile) return;
   if (!window.FBInstant) {
-    statusEl.textContent = "FBInstant niet beschikbaar (lokale test). Gebruik kopieerknop.";
+    statusEl.textContent = "FBInstant niet beschikbaar. Gebruik 'Copy status text' en deel handmatig op Facebook.";
     return;
   }
 
   const image = canvas.toDataURL("image/png").replace(/^data:image\/png;base64,/, "");
+  const payload = buildSharePayload(image, latestShareText);
+
+  setSharingState(true);
+  statusEl.textContent = "Deelvenster wordt geopend…";
+
   try {
-    await window.FBInstant.shareAsync({
-      intent: "SHARE",
-      image,
-      text: latestShareText,
-      data: { source: "ai-zegt-dat-ik" },
-    });
+    await window.FBInstant.shareAsync(payload);
     statusEl.textContent = "Succesvol gedeeld.";
   } catch {
-    statusEl.textContent = "Delen afgebroken of mislukt.";
+    statusEl.textContent = "Delen lukte niet. 1) Tik op 'Copy status text'. 2) Open Facebook handmatig. 3) Plaats de tekst + badge-afbeelding.";
+  } finally {
+    setSharingState(false);
   }
 });
 
