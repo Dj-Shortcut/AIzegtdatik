@@ -1,10 +1,12 @@
 import http from "node:http";
+import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { validateGenerateRequest } from "./schema.js";
 import { createRateLimiter } from "./rateLimit.js";
 import { callLlmWithRetry } from "./llmClient.js";
 import { getDeterministicFallback } from "./fallbacks.js";
+import { applySafetyFilter, logSafetyEvent } from "./safety.js";
 
 const PUBLIC_DIR = join(process.cwd(), "public");
 const MIME_TYPES = {
@@ -63,6 +65,8 @@ async function readJsonBody(req) {
 function handleGenerate({ llmClient, checkRateLimit }) {
   return async (req, res) => {
     const ip = req.socket.remoteAddress ?? "unknown";
+    const requestId = crypto.randomUUID();
+    const ipFamily = ip.includes(":") ? "ipv6" : "ipv4";
     const limit = checkRateLimit(ip);
     if (!limit.allowed) {
       return sendJson(
@@ -113,18 +117,41 @@ function handleGenerate({ llmClient, checkRateLimit }) {
 
     try {
       const llm = await llmClient(validation.value);
+      const safeResult = applySafetyFilter(llm.text);
+      if (safeResult.replaced) {
+        logSafetyEvent({
+          type: "generation_filter",
+          route: req.url,
+          requestId,
+          outcome: "replaced",
+          reason: safeResult.reason,
+          llmAttempts: llm.attempts,
+          ipFamily,
+        });
+      }
+
       return sendJson(res, 200, {
         ok: true,
         data: {
-          text: llm.text,
+          text: safeResult.text,
           meta: {
             source: "llm",
             attempts: llm.attempts,
             fallbackUsed: false,
+            safetyFiltered: safeResult.replaced,
           },
         },
       });
     } catch (error) {
+      logSafetyEvent({
+        type: "generation_error",
+        route: req.url,
+        requestId,
+        outcome: "fallback",
+        reason: error.code ?? "LLM_ERROR",
+        ipFamily,
+      });
+
       const fallback = getDeterministicFallback(validation.value.archetype, validation.value.drama);
       return sendJson(res, 200, {
         ok: true,
