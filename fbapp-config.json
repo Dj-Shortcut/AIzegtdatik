@@ -1,0 +1,12 @@
+{
+  "instant_games": {
+    "platform_version": "RICH_GAMEPLAY",
+    "navigation_menu_version": "NAV_FLOATING",
+    "orientation": "PORTRAIT",
+    "custom_update_templates": [],
+    "match_player_config": {
+      "minimum_size": 2,
+      "maximum_size": 8
+    }
+  }
+}
