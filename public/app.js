@@ -59,13 +59,62 @@ let latestProfile = null;
 
 copyBtn.textContent = "Copy status text";
 
-function initFbInstant() {
-  if (!window.FBInstant) return;
-  window.FBInstant.initializeAsync().then(() => {
-    window.FBInstant.startGameAsync();
-  }).catch(() => {
-    statusEl.textContent = "FBInstant init mislukt, lokale modus actief.";
-  });
+function devLog(...args) {
+  if (!isDevMode) return;
+  console.info("[dev]", ...args);
+}
+
+function createMockFbInstant() {
+  return {
+    async initializeAsync() {
+      devLog("Mock FBInstant initializeAsync()");
+    },
+    async startGameAsync() {
+      devLog("Mock FBInstant startGameAsync()");
+    },
+    async shareAsync(payload) {
+      devLog("Mock FBInstant shareAsync()", payload);
+      return { ok: true };
+    },
+  };
+}
+
+function renderDevBadge() {
+  if (!isDevMode) return;
+
+  const badge = document.createElement("span");
+  badge.className = "dev-badge";
+  badge.textContent = "DEV MODE";
+
+  const title = document.querySelector("h1");
+  title?.insertAdjacentElement("afterend", badge);
+}
+
+async function bootstrap() {
+  renderDevBadge();
+
+  if (window.FBInstant) {
+    fbInstantAdapter = window.FBInstant;
+    try {
+      await fbInstantAdapter.initializeAsync();
+      await fbInstantAdapter.startGameAsync();
+      devLog("FBInstant initialization completed.");
+    } catch {
+      statusEl.textContent = "FBInstant init mislukt, lokale modus actief.";
+      fbInstantAdapter = createMockFbInstant();
+      await fbInstantAdapter.initializeAsync();
+      await fbInstantAdapter.startGameAsync();
+    }
+    return;
+  }
+
+  fbInstantAdapter = createMockFbInstant();
+  window.FBInstant = fbInstantAdapter;
+  await fbInstantAdapter.initializeAsync();
+  await fbInstantAdapter.startGameAsync();
+  if (!isDevMode) {
+    statusEl.textContent = "FBInstant niet gevonden; mock-adapter actief in browsermodus.";
+  }
 }
 
 function renderQuiz() {
@@ -175,6 +224,11 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
 }
 
 async function generateSentence(profile) {
+  if (shouldSkipAi) {
+    devLog("AI endpoint overgeslagen via ?skip_ai=1");
+    return "Ik ben de hoofdrol in elke groepschat – met stijl.";
+  }
+
   const response = await fetch("/api/genSentence", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -268,4 +322,4 @@ shareBtn.addEventListener("click", async () => {
 });
 
 renderQuiz();
-initFbInstant();
+bootstrap();

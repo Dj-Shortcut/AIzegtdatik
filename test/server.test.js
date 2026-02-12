@@ -77,19 +77,45 @@ test("rate limits on endpoint level", async () => {
   server.close();
 });
 
-test("supports /api/genSentence alias", async () => {
-  const server = createServer({ llmClient: async () => ({ text: "ok", attempts: 1 }) });
+test("enforces /api/genSentence schema and returns { line }", async () => {
+  const server = createServer({
+    llmClient: async () => ({ text: "hello\nthere\nfriend with extra words over the max limit yes absolutely", attempts: 1 }),
+  });
   await new Promise((resolve) => server.listen(0, resolve));
 
-  const res = await requestJson(
-    server,
-    { archetype: "sage", drama: "low", emojiLevel: 1, prompt: "x" },
-    "/api/genSentence"
-  );
+  const res = await requestJson(server, {
+    archetype: "sage",
+    dramaScore: 42,
+    engagementScore: 77,
+    emojiLevel: 1,
+  }, "/api/genSentence");
 
   assert.equal(res.status, 200);
-  assert.equal(res.body.ok, true);
-  assert.equal(res.body.data.text, "ok");
+  assert.deepEqual(Object.keys(res.body), ["line"]);
+  assert.equal(res.body.line.includes("\n"), false);
+  assert.ok(res.body.line.split(/\s+/).length <= 25);
+
+  const bad = await requestJson(server, { archetype: "sage" }, "/api/genSentence");
+  assert.equal(bad.status, 400);
+  assert.deepEqual(Object.keys(bad.body), ["line"]);
+
+  server.close();
+});
+
+test("applies per-IP rate limiter to /api/genSentence", async () => {
+  const server = createServer({
+    llmClient: async () => ({ text: "ok", attempts: 1 }),
+    rateLimit: { maxRequests: 1, windowMs: 60_000 },
+  });
+  await new Promise((resolve) => server.listen(0, resolve));
+
+  const payload = { archetype: "mentor", dramaScore: 30, engagementScore: 50, emojiLevel: 2 };
+  const first = await requestJson(server, payload, "/api/genSentence");
+  const second = await requestJson(server, payload, "/api/genSentence");
+
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 429);
+  assert.deepEqual(Object.keys(second.body), ["line"]);
 
   server.close();
 });
