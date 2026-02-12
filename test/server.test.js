@@ -77,6 +77,37 @@ test("rate limits on endpoint level", async () => {
   server.close();
 });
 
+test("supports /api/genSentence alias", async () => {
+  const server = createServer({ llmClient: async () => ({ text: "ok", attempts: 1 }) });
+  await new Promise((resolve) => server.listen(0, resolve));
+
+  const res = await requestJson(
+    server,
+    { archetype: "sage", drama: "low", emojiLevel: 1, prompt: "x" },
+    "/api/genSentence"
+  );
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.data.text, "ok");
+
+  server.close();
+});
+
+test("serves front-end index page", async () => {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, resolve));
+
+  const port = server.address().port;
+  const response = await fetch(`http://127.0.0.1:${port}/`, { method: "GET" });
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(html, /AI zegt dat ik/);
+
+  server.close();
+});
+
 test("returns 404 structured error for unknown route", async () => {
   const server = createServer();
   await new Promise((resolve) => server.listen(0, resolve));
