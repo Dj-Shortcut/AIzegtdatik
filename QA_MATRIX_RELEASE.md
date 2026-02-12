@@ -1,138 +1,105 @@
-# QA-matrix per milestone (Release Owner)
+# QA Matrix — Release Gates (M1–M5)
 
-Gebruik dit document als afvinkbare kwaliteitsgate per milestone.  
-**Regel:** een milestone is alleen **PASS** als **alle** criteria binnen die milestone op PASS staan.
+Gebruik dit document als harde go/no-go gate voor iedere releasecandidate.
 
-## Startstatus (ingevuld op basis van huidige repository-audit)
+## Gate regels
 
-> Deze eerste invulling is gestart op basis van code + tests in deze repo. Alles zonder bewijs/artifact blijft **open** tot jij de ontbrekende info aanlevert.
+- Een milestone is alleen **PASS** als **alle checks** in die milestone op PASS staan.
+- Een milestone is **FAIL** zodra één check FAIL is.
+- **M5 kan alleen PASS zijn als M1–M4 PASS zijn.**
 
-| Milestone | Voorlopige status | Waarom nu |
+## Snapshot status
+
+| Milestone | Gate focus | Huidige status |
 |---|---|---|
-| M1 | ☐ PASS ☑ FAIL | Geen SDK-init events/log-export/performance-rapport in deze backend-repo gevonden. |
-| M2 | ☐ PASS ☑ FAIL | Validatie- en fallbacktests bestaan, maar geen expliciete scoremodule + 100-run determinisme-rapport. |
-| M3 | ☐ PASS ☑ FAIL | Er is fallbackgedrag, maar geen harde output-checker voor ≤25 woorden/toon/safety in testset. |
-| M4 | ☐ PASS ☑ FAIL | Request-schema validatie bestaat; device/orientatie matrix ontbreekt. |
-| M5 | ☐ PASS ☑ FAIL | Geen complete pre-submit export, regressierapport en rollback dry-run bewijs gevonden. |
-
-### Open vragen voor jou (nodig om verder af te vinken)
-
-- [ ] Kun je de **SDK init logs** en **cold-start performance-rapporten** delen voor M1?
-- [ ] Bestaat er buiten deze repo een **scoreberekening-module** + vaste testcase-set voor M2?
-- [ ] Heb je een **AI-validatieset** (woordlimiet, toon, safety) voor M3?
-- [ ] Kun je de **device/orientatie testmatrix** voor M4 aanleveren?
-- [ ] Is er een **rollback runbook** + dry-run output voor M5?
+| M1 | Load-time checks | ☐ PASS ☑ FAIL |
+| M2 | Gameplay determinisme checks | ☐ PASS ☑ FAIL |
+| M3 | AI safety/output checks | ☐ PASS ☑ FAIL |
+| M4 | Share pipeline checks | ☐ PASS ☑ FAIL |
+| M5 | API health + release readiness | ☐ PASS ☑ FAIL |
 
 ---
 
-## Overzicht
+## M1 — Load-time checks
 
-| Milestone | Scope | Status (PASS/FAIL) | Opmerkingen |
-|---|---|---|---|
-| M1 | SDK init events, no-console-errors, cold-start tijd | ☐ PASS ☐ FAIL | |
-| M2 | Deterministische scoreberekening met vaste testcases | ☐ PASS ☐ FAIL | |
-| M3 | AI-output constraints (<=25 woorden, toonregels, safe output) | ☐ PASS ☐ FAIL | |
-| M4 | Share payload validatie op meerdere devices/orientaties | ☐ PASS ☐ FAIL | |
-| M5 | Pre-submit checklist incl. regressies en rollback-plan | ☐ PASS ☐ FAIL | |
+| Check | Pass-criterium | FAIL wanneer |
+|---|---|---|
+| SDK init | `FBInstant.initializeAsync()` en `startGameAsync()` slagen in Instant Games container | Eén van beide promise-calls reject of timeout |
+| Console health | 0 console errors tijdens cold start + eerste interactie | Minstens 1 console error tijdens flow |
+| Cold start budget | P95 load/cold-start binnen teamtarget (bijv. <= 3s op referentiedevice) | P95 boven target of geen meetrapport |
 
----
-
-## M1 — SDK init events, no-console-errors, cold-start tijd
-
-- [ ] **SDK init events aanwezig en compleet**  
-  **Pass-criterium (objectief):** vereiste init-events verschijnen exact 1x per cold start in logs/telemetry en bevatten verplichte velden.
-- [ ] **Geen console errors tijdens init flow**  
-  **Pass-criterium (objectief):** 0 `error`-niveau meldingen in console tijdens volledige init flow op testbuild.
-- [ ] **Cold-start tijd binnen target**  
-  **Pass-criterium (objectief):** P95 cold-start ≤ afgesproken SLA/target in meetrapport.
-
-**Bewijs/artifacts:**
-- [ ] Log-export toegevoegd
-- [ ] Performance-rapport toegevoegd
-- [ ] Build/version genoteerd
+**Artifacts vereist:** init-log export, console capture, performance rapport met build-id.
 
 **Milestone verdict M1:** ☐ PASS ☐ FAIL
 
 ---
 
-## M2 — Deterministische scoreberekening met vaste testcases
+## M2 — Gameplay determinisme checks
 
-- [x] **Vaste testset aanwezig (input + expected output)**  
-  **Pass-criterium (objectief):** testset is versioned en bevat minimaal afgesproken kernscenario’s + edge-cases.
-- [ ] **Determinisme over herhaalde runs**  
-  **Pass-criterium (objectief):** 100% identieke score-uitkomsten voor gelijke input over N runs (N volgens teamafspraak, bijv. 100).
-- [x] **Geen niet-deterministische dependencies actief**  
-  **Pass-criterium (objectief):** random/time/externe invloeden zijn gemockt of gefixeerd in testcontext.
+| Check | Pass-criterium | FAIL wanneer |
+|---|---|---|
+| Scoreberekening deterministic | Identieke input geeft 100% identieke output over afgesproken runs (bijv. N=100) | Minstens één run met afwijkende output |
+| Testset coverage | Vaste versioned testcase set met happy path + edge cases aanwezig | Testset ontbreekt of niet versioned |
+| Random/time isolation | Geen on-gefixeerde random/time dependency in tests | Random/time beïnvloedt resultaat |
 
-**Bewijs/artifacts:**
-- [ ] Testrun-rapport met run-aantallen
-- [x] Overzicht testcases + expected values
-- [ ] CI-link/build-id
+**Artifacts vereist:** testrun output, testcase overzicht, CI run-link.
 
 **Milestone verdict M2:** ☐ PASS ☐ FAIL
 
 ---
 
-## M3 — AI-output constraints (<=25 woorden, toonregels, safe output)
+## M3 — AI safety/output checks
 
-- [ ] **Lengtebeperking afgedwongen**  
-  **Pass-criterium (objectief):** 100% van outputs in validatieset bevat ≤25 woorden.
-- [ ] **Toonregels nageleefd**  
-  **Pass-criterium (objectief):** 100% van outputs voldoet aan gedefinieerde toonregels volgens checker/rubric.
-- [ ] **Safe output policies nageleefd**  
-  **Pass-criterium (objectief):** 0 policy violations in safety-evaluatie op validatieset.
+| Check | Pass-criterium | FAIL wanneer |
+|---|---|---|
+| Woordlimiet | 100% outputs in validatieset <= 25 woorden | Eén of meer outputs > 25 woorden |
+| Toonregels | 100% outputs voldoen aan afgesproken toon/rubric | Eén of meer outputs buiten rubric |
+| Safety policy | 0 policy violations in safety-evaluatie | Minstens 1 policy violation |
 
-**Bewijs/artifacts:**
-- [ ] Validatieset + resultaten
-- [ ] Safety-rapport
-- [ ] Prompt/modelversie gedocumenteerd
+**Artifacts vereist:** validatieset, output checker report, safety report, prompt/model versie.
 
 **Milestone verdict M3:** ☐ PASS ☐ FAIL
 
 ---
 
-## M4 — Share payload validatie op meerdere devices/orientaties
+## M4 — Share pipeline checks
 
-- [x] **Payload schema-validatie geslaagd**  
-  **Pass-criterium (objectief):** payload valideert 100% tegen afgesproken schema (required fields, types, limits).
-- [ ] **Cross-device validatie**  
-  **Pass-criterium (objectief):** alle verplichte device-profielen (minimaal iOS + Android referentiemodellen) geslaagd zonder blokkerende defects.
-- [ ] **Orientatie-validatie**  
-  **Pass-criterium (objectief):** portrait + landscape geven consistente en valide payloads op alle testdevices.
+| Check | Pass-criterium | FAIL wanneer |
+|---|---|---|
+| Payload validatie | Share payload voldoet 100% aan schema (intent/image/text/data) | Schemafout, ontbrekend required field, of type mismatch |
+| Share flow runtime | `FBInstant.shareAsync` opent en retourneert succesvol in testflow | reject/cancel zonder correcte handling of crash |
+| Device + orientation matrix | Verplichte devices (minimaal 1 iOS, 1 Android) + portrait/landscape testcases geslaagd | Eén verplicht device/oriëntatie profiel faalt |
 
-**Bewijs/artifacts:**
-- [ ] Device-matrix met resultaten
-- [x] Schema-validatielogs
-- [ ] Reproduceerbare teststappen
+**Artifacts vereist:** schema logs, device-matrix, reproduceerbare stappen/screencast.
 
 **Milestone verdict M4:** ☐ PASS ☐ FAIL
 
 ---
 
-## M5 — Pre-submit checklist incl. regressies en rollback-plan
+## M5 — API health + release readiness
 
-- [ ] **Pre-submit checklist volledig uitgevoerd**  
-  **Pass-criterium (objectief):** alle verplichte checks zijn groen en ondertekend door eigenaar/vervanger.
-- [ ] **Regressies gecontroleerd**  
-  **Pass-criterium (objectief):** afgesproken regressiesuite 100% uitgevoerd; geen openstaande blocker/high defects.
-- [ ] **Rollback-plan gereed en getest**  
-  **Pass-criterium (objectief):** rollback-procedure gedocumenteerd, eigenaar toegewezen, en minimaal 1 dry-run succesvol.
+| Check | Pass-criterium | FAIL wanneer |
+|---|---|---|
+| API health | `/api/genSentence` geeft stabiel success-response volgens contract (`ok: true`, `data.text`) onder normale load | Contractbreuk, verhoogde 5xx, of instabiele latency |
+| Release artifact integrity | `npm run build:release` levert valide zip met alleen vereiste upload assets | Build faalt of artifact bevat ontbrekende/extra kritieke files |
+| Go-live readiness | Pre-submit checklist + regressies + rollback dry-run compleet en ondertekend | Onvolledige checklist of rollback niet getest |
 
-**Bewijs/artifacts:**
-- [ ] Checklist-export
-- [ ] Regressierapport + defectoverzicht
-- [ ] Rollback runbook + dry-run bewijs
+**Artifacts vereist:** API monitor snapshot, build logs, artifact checksum, checklist-export, rollback dry-run bewijs.
 
 **Milestone verdict M5:** ☐ PASS ☐ FAIL
 
 ---
 
-## Release-go/no-go samenvatting
+## Eindbesluit (Go/No-Go)
 
-- [ ] Alle milestones M1 t/m M5 staan op PASS
-- [ ] Openstaande risico’s expliciet geaccepteerd
+- [ ] M1 PASS
+- [ ] M2 PASS
+- [ ] M3 PASS
+- [ ] M4 PASS
+- [ ] M5 PASS
+- [ ] Open risico’s expliciet geaccepteerd
 - [ ] Release owner akkoord
 
-**Eindbesluit:** ☐ GO ☐ NO-GO  
+**Final verdict:** ☐ GO ☐ NO-GO  
 **Release owner:** ____________________  
 **Datum/tijd:** ____________________
